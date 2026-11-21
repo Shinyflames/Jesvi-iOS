@@ -1,0 +1,15 @@
+# Commands run by the launchd job com.redwood.demo (see com.redwood.demo.plist).
+# y2s (S20+) test 11: the flashlight before and after the cameras, and the microSD card's state. Unlocked as
+# rc.jobs.unlock does. The kernel's "torch:" lines say each request, the battery's temperature and any failed write.
+/redwood/bin/hello_dyn started by launchd
+/redwood/bin/rwtouch wait 32 swipe 0.5 0.985 0.5 0.3 250
+/redwood/bin/hello_dyn y2sdiag: torch before the cameras
+/redwood/bin/torch_test state level 1 wait 3 state off state
+/redwood/bin/rwsys kern.redwood.sdcard
+/redwood/bin/hello_dyn y2sdiag: the cameras
+/redwood/bin/camera_test cycle 30
+/redwood/bin/hello_dyn y2sdiag: torch after the cameras
+/redwood/bin/torch_test state level 1 wait 3 state off state
+/redwood/bin/rwsys kern.redwood.sdcard
+/bin/ls -la /dev/disk9 /dev/disk9s1 /private/var/mobile/Library/Caches/com.apple.mediaserverd
+/bin/ps -A

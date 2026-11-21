@@ -1,0 +1,20 @@
+# Commands run by the launchd job com.redwood.demo (see com.redwood.demo.plist).
+# y2s (S20+) M5 test 7: unlocked as rc.jobs.unlock does, then the S20 camera driver's own bounded checks through the
+# debug port, before anything opens a camera (they are "cold/idle-only"): the CSIS PHY rails (S2MPS22 LDO5S/LDO6S,
+# read only), the CSIS power domain and clocks, the pin inventory (read only), and each sensor's identity
+# (power on, model/revision, power and pins restored). The answers go to the console, i.e. the log in darwin.
+/redwood/bin/hello_dyn started by launchd
+/redwood/bin/rwtouch wait 32 swipe 0.5 0.985 0.5 0.3 250
+/redwood/bin/hello_dyn y2scam: camera checks start
+/redwood/bin/rwsys kern.redwood.poke cam.s20.csis.rails
+/redwood/bin/rwsys kern.redwood.poke cam.s20.csis.power
+/redwood/bin/rwsys kern.redwood.poke cam.s20
+/redwood/bin/rwsys kern.redwood.poke cam.s20.front.id
+/redwood/bin/rwsys kern.redwood.poke cam.s20.id
+/redwood/bin/rwsys kern.redwood.poke cam.s20.2la.id
+/redwood/bin/rwsys kern.redwood.poke cam.s20.gw2.id
+/redwood/bin/rwsys kern.redwood.poke cam.s20.csis.rails
+/redwood/bin/hello_dyn y2scam: camera checks done
+/redwood/bin/camera_avtest
+/redwood/bin/rwsys kern.redwood.poke cam.s20.csis.rails
+/bin/ps -A

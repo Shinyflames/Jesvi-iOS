@@ -812,6 +812,16 @@ if [ -f ../fw-sound/vts.bin ]; then
 	mkdir -p root/fw
 	install -m 0644 ../fw-sound/vts.bin root/fw/
 fi
+# y2s flash root (FLASHBOOT=1): the root is Apple's own volume in darwin, which has no /fw, so ABOX's Calliope
+# firmware travels in this small image instead (redwood_exynos_sound.c finds it with redwood_image_file("fw", ...))
+if [ -n "$FLASHBOOT" ]; then
+	for f in calliope_sram.bin calliope_dram.bin calliope_sram_2.bin calliope_dram_2.bin abox_tplg.bin; do
+		if [ -f ../fw-sound/$f ]; then
+			mkdir -p root/fw
+			install -m 0644 ../fw-sound/$f root/fw/
+		fi
+	done
+fi
 # ... or the S20+'s Broadcom BCM4375 (bsd/dev/redwood_bcm4375.c, wifi_pcie=4), from the phone's /vendor/firmware
 # into ../fw-wifi under these names: bcmdhd_sta.bin_b1, bcmdhd_clm.blob and the B1 NVRAMs (SEMCO's is this
 # phone's, "Y2"; Murata's for wifi_nvram=1). 1.3 MB, the vendor's and not in the repository.
@@ -931,6 +941,10 @@ if [ -n "${JESVI_TARGET:-}" ]; then
 fi
 if [ "${DEVICE:-x1slte}" = x1slte ] && [ -d "$IOS/rootfs/usr/lib" ]; then
     python3 ../tools/camera/prepare-root.py root --binaries obj
+fi
+# OVERLAY=<script>: run on root/ last, before the image is made (y2s: upstream release pieces laid over a PREBUILT tree)
+if [ -n "${OVERLAY:-}" ]; then
+	bash "$OVERLAY" root
 fi
 python3 ../tools/apfs/mkapfs.py -z --plain fw -o root.apfs redwood=root | tail -1
 [ -z "$CHECK" ] || ../tools/apfs/check-image.sh root.apfs redwood=root

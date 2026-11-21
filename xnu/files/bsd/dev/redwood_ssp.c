@@ -125,6 +125,7 @@ extern int redwood_pmic_ldo_on(unsigned ldo, char *report, size_t report_size);
 /* the dtbo's numbers for the hub (the last overlay of each wins: fragment@133 positions, @139 the matrix) */
 #define ACC_POSITION            6
 #define MAG_POSITION            5
+static uint32_t acc_position = ACC_POSITION, mag_position = MAG_POSITION;   /* boot-args shub_acc_pos, shub_mag_pos */
 #define AP_TYPE                 0       /* fragment@91 ssp-ap-type */
 #define GLASS_TYPE              0
 static const uint8_t mag_pdc[27] = {
@@ -1157,9 +1158,9 @@ ssp_init(void)
 	if (!ssp_cmd(SSP_AP_INFORMATION, SSP_AP2HUB_WRITE, 0, b, 2)) {
 		say("shub: 5: the AP's information not taken\n");
 	}
-	b[0] = ACC_POSITION;
-	b[1] = ACC_POSITION;
-	b[2] = MAG_POSITION;
+	b[0] = (uint8_t)acc_position;
+	b[1] = (uint8_t)acc_position;
+	b[2] = (uint8_t)mag_position;
 	if (!ssp_cmd(SSP_SENSOR_FORMATION, SSP_AP2HUB_WRITE, 0, b, 3)) {
 		say("shub: 5: the formation not taken\n");
 	}
@@ -1774,6 +1775,12 @@ redwood_ssp_init(void)
 	PE_parse_boot_argn("shub_ms", &period_ms, sizeof(period_ms));
 	PE_parse_boot_argn("shub_req_rpc", &req_rpc, sizeof(req_rpc));
 	PE_parse_boot_argn("shub_req_len", &req_len, sizeof(req_len));
+	/* the hub's mounting of the accelerometer/gyroscope and the magnetometer (the dtbo's ssp-acc-position and
+	 * ssp-mag-position): the S20's 6 and 5 by default; the S20+ (y2s, SM-G985F) has acc 7, mag 5 */
+	PE_parse_boot_argn("shub_acc_pos", &acc_position, sizeof(acc_position));
+	PE_parse_boot_argn("shub_mag_pos", &mag_position, sizeof(mag_position));
+	acc_position = acc_position > 7 ? ACC_POSITION : acc_position;
+	mag_position = mag_position > 7 ? MAG_POSITION : mag_position;
 	if (PE_parse_boot_argn("shub_hello", &h, sizeof(h))) {
 		no_hello = h == 0;
 	}

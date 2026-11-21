@@ -5543,6 +5543,8 @@ misc_keep_recovery(void)
 	print("misc: boot-recovery %s\n", memcmp(blk, cmd, sizeof(cmd)) == 0 ? "written and read back" : "written, but reads back otherwise");
 }
 #endif
+static int then_recovery;      /* cmdline then_recovery=1: after a run that returned, reboot into recovery */
+
 static void
 y2s_menu_loop(void)
 {
@@ -5602,6 +5604,18 @@ y2s_menu_loop(void)
 				banner = "iOS did not start: see Log access";
 			} else {
 				banner = "iOS returned: its log is saved (Log access)";
+				if (then_recovery) {
+					/* then_recovery=1 (a test run driven from the computer): the log is saved, so
+					 * go on to TWRP, where the host reads it and puts the other system back. Only
+					 * after a run that returned: a run that did not start stays in the menu. */
+					menu_status("iOS returned", "its log is saved", "rebooting into TWRP in 5 s", NULL, NULL);
+					for (int s = 0; s < 5; s++) {
+						BS->stall(1000000);
+						wdt_pet();
+					}
+					print("then_recovery=1: rebooting into recovery\n");
+					reboot_recovery();
+				}
 			}
 			console_suspect = 1;            /* (the firmware's console after a run: see put_char) */
 		} else if (choice == MENU_DOWNLOAD) {
@@ -6371,6 +6385,9 @@ efi_main(efi_handle image, efi_system_table *st)
 		if (starts_with(c, "bootui=0") && (c == pi.cmdline || c[-1] == ' ')) {
 			bootui = 0;
 			screen_quiet = 0;
+		}
+		if (starts_with(c, "then_recovery=1") && (c == pi.cmdline || c[-1] == ' ')) {
+			then_recovery = 1;
 		}
 	}
 	if (have_payload && pi.devmode) {
