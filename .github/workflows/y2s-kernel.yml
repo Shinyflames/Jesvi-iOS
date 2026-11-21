@@ -1,0 +1,35 @@
+name: y2s kernel
+# Galaxy S20+ (SM-G985F, y2s) port: source-only XNU build on a hosted macOS runner.
+# No Apple firmware, no Samsung firmware, no phone. Output: out/experimental/y2s/mach.y2s.
+on:
+  push:
+    branches: [y2s-port]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: y2s-kernel-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  kernel:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Host tools
+        run: brew install coreutils gnu-tar gnu-sed findutils bison m4
+      - name: Build y2s kernel
+        run: ./build.sh kernel --device y2s --experimental --jobs 3
+      - name: Verify checksum
+        working-directory: out/experimental/y2s
+        run: shasum -a 256 -c SHA256SUMS
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: y2s-kernel-${{ github.sha }}
+          path: out/experimental/y2s/
+          if-no-files-found: warn
+          retention-days: 30
