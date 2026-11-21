@@ -56,7 +56,22 @@ struct payload_entry { char name[16]; uint32_t size; uint32_t reserved; };
 #ifndef SUPER_TAIL_START
 #define SUPER_TAIL_START 0x1E8B04000ULL
 #endif
-#if LOG_IN_RECOVERY
+/*
+ * y2s SM-G985F (-DY2S_G985F=1, 2026-11-21): this phone keeps Android 16 in super, its data in userdata,
+ * Ubuntu in y2s-root and TWRP in recovery, and all of them must survive iOS. So the loader writes into
+ * darwin and nowhere else: the log into the last 16 MiB of darwin (blocks 8384512..8388607, outside the
+ * data volume), USB downloads only into darwin before that slice, and misc is never touched. darwin is
+ * proved by its GPT entry (both GUIDs, first and last LBA) before every write.
+ */
+#ifndef Y2S_G985F
+#define Y2S_G985F 0
+#endif
+#include "y2s_bounds.h"     /* DARWIN_LOG_BLOCK and the write rules, tested on the host (tools/tests) */
+#if Y2S_G985F
+#define LOG_PARTITION       u"darwin"
+#define LOG_PARTITION_ASCII "darwin"
+#define LOG_OFFSET          (DARWIN_LOG_BLOCK * 4096ULL)
+#elif LOG_IN_RECOVERY
 #define LOG_PARTITION       u"recovery"   /* y2s has no logdump: park the log in the recovery image */
 #define LOG_PARTITION_ASCII "recovery"
 #define LOG_OFFSET          0x01000000ULL /* 16 MB into recovery: clear of the UEFI image (0) and the kernel (32 MB) */
@@ -355,10 +370,18 @@ find_partition_ascii(const char *name)
 	return find_partition(buf);
 }
 
+#if Y2S_G985F
+static efi_block_io *y2s_darwin_bio(void);      /* defined after BLOCK_DARWIN_* */
+#endif
+
 static efi_block_io *
 find_log_partition(void)
 {
+#if Y2S_G985F
+	return y2s_darwin_bio();                /* darwin, and only if it is what it was */
+#else
 	return find_partition(LOG_PARTITION);
+#endif
 }
 
 /*
@@ -452,6 +475,12 @@ store_logs(efi_block_io *bio, const char *klog, uint64_t klog_len)
 	uint64_t bs = bio->media->block_size;
 	uint64_t len = (staged_len + 1 + bs - 1) / bs * bs;
 	uint64_t lba = bs != 0 ? LOG_OFFSET / bs : 0;
+#if Y2S_G985F
+	if (!y2s_log_ok(bs, lba, len)) {
+		print("log: NOT WRITTEN: it would not fit darwin's log slice (%d bytes)\n", len);
+		return 0;
+	}
+#endif
 	efi_status ws, rs = 0;
 	int same = 0;
 
@@ -1744,6 +1773,70 @@ ufs_survey(void)
 #define BLOCK_DARWIN_TYPE  { 0x7c3457ef, 0x0000, 0x11aa, { 0xaa, 0x11, 0x00, 0x30, 0x65, 0x43, 0xec, 0xac } }
 #define BLOCK_DARWIN_UNIQ  { 0x6e1a3c5b, 0x2f44, 0x4b8e, { 0x9d, 0x27, 0x53, 0xd2, 0xa0, 0xf1, 0xc9, 0x34 } }
 
+#if Y2S_G985F
+/*
+ * darwin's BlockIo, only if its GPT entry is what it was when the port was set up (name, type and unique
+ * GUIDs, first and last LBA, 4096-byte blocks, writable): the one partition this loader may write on
+ * the SM-G985F. NULL otherwise, and the reason is printed once.
+ */
+static efi_block_io *
+y2s_darwin_bio(void)
+{
+	static const efi_guid part_guid = EFI_PARTITION_INFO_GUID;
+	static const efi_guid blk_guid = EFI_BLOCK_IO_GUID;
+	static const efi_guid type = BLOCK_DARWIN_TYPE, uniq = BLOCK_DARWIN_UNIQ;
+	static const char16 name[] = u"darwin";
+	static int told;
+	efi_handle *handles;
+	uint64_t count;
+	efi_block_io *found = NULL;
+	const char *why = "there is no partition named darwin";
+	int named = 0;
+
+	if (EFI_ERROR(BS->locate_handle_buffer(ByProtocol, &part_guid, NULL, &count, &handles))) {
+		return NULL;
+	}
+	for (uint64_t i = 0; i < count; i++) {
+		efi_partition_info *info;
+		efi_block_io *bio;
+		unsigned k;
+
+		if (EFI_ERROR(BS->handle_protocol(handles[i], &part_guid, (void **)&info)) || info->type != 2) {
+			continue;
+		}
+		for (k = 0; k < 7 && info->name[k] == name[k]; k++) {
+		}
+		if (k != 7) {
+			continue;
+		}
+		if (named++) {
+			why = "more than one partition is named darwin";
+			found = NULL;
+			break;
+		}
+		if (EFI_ERROR(BS->handle_protocol(handles[i], &blk_guid, (void **)&bio)) || bio->media == NULL) {
+			why = "darwin has no BlockIo";
+		} else if (memcmp(&info->type_guid, &type, sizeof(type)) != 0) {
+			why = "darwin's type GUID is not the one it had";
+		} else if (memcmp(&info->unique_guid, &uniq, sizeof(uniq)) != 0) {
+			why = "darwin's unique GUID is not the one it had";
+		} else if (info->start_lba != BLOCK_DARWIN_FIRST || info->end_lba != BLOCK_DARWIN_LAST) {
+			why = "darwin does not begin and end where it did";
+		} else if (bio->media->block_size != 4096 || bio->media->last_block + 1 != BLOCK_DARWIN_LAST - BLOCK_DARWIN_FIRST + 1) {
+			why = "darwin's blocks are not what they were";
+		} else if (bio->media->read_only) {
+			why = "UEFI gives darwin out read only";
+		} else {
+			found = bio;
+		}
+	}
+	if (found == NULL && !told++) {
+		print("darwin: NOTHING will be written this run: %s\n", why);
+	}
+	return found;
+}
+#endif
+
 /*
  * The partitions first, then the logical units they are on (BLOCK_PART_UNIT, named unit0, unit1,
  * ... in the order UEFI lists them). Each partition says which of those it is on and where it
@@ -2418,7 +2511,9 @@ block_poll(void)
 			s = 0x800000000000000FULL;      /* EFI_ACCESS_DENIED */
 			bytes = 0;
 		} else if (op == BLOCK_OP_WRITE) {
-			if (block_write_part < 0 || part != (uint32_t)block_write_part || lba < BLOCK_WRITE_FIRST) {
+			if (block_write_part < 0 || part != (uint32_t)block_write_part || lba < BLOCK_WRITE_FIRST ||
+			    (Y2S_G985F && !y2s_service_write_ok(lba, count))) {
+				/* (y2s SM-G985F: nor into darwin's log slice at its end) */
 				/* not darwin, or not past what the build writes from the computer: never */
 				if (block_writes_refused++ < 8) {
 					print("ufs: a write of %d blocks from %d of %s: REFUSED\n", count, lba,
@@ -5282,6 +5377,18 @@ stage_write(const char *part, uint64_t off)
 	uint64_t bs, size, len = stage_len, done = 0;
 	uint8_t *src = stage_buf;
 
+#if Y2S_G985F
+	/* the SM-G985F: darwin only, before its log slice; never recovery (TWRP), boot, super, up_param, userdata */
+	if (!str_eq(part, "darwin")) {
+		return "refused: on the SM-G985F a download goes into darwin only";
+	}
+	if ((bio = y2s_darwin_bio()) == NULL) {
+		return "refused: darwin is not what it was (see above)";
+	}
+	if (!y2s_download_ok(1, off, len)) {
+		return "refused: past the start of darwin's log slice";
+	}
+#else
 	if (str_eq(part, "userdata")) {
 		if (USERDATA_WIN_LEN == 0 || off < USERDATA_WIN_OFF || off + len > USERDATA_WIN_OFF + USERDATA_WIN_LEN) {
 			return "refused: userdata only inside the port's own window (USERDATA_WIN_OFF/LEN)";
@@ -5297,6 +5404,7 @@ stage_write(const char *part, uint64_t off)
 	} else if (!(str_eq(part, "recovery") || str_eq(part, "boot") || (str_eq(part, "super") && off >= SUPER_TAIL_START))) {
 		return "refused: only recovery, boot, up_param, super's free tail (SUPER_TAIL_START) and the userdata window";
 	}
+#endif
 	if (bio == NULL || bio->media == NULL || src == NULL || len == 0) {
 		return "no such partition, or nothing downloaded";
 	}
@@ -5400,6 +5508,7 @@ log_access(void)
  * any reset or crash comes back here. Only the message's command field (misc's first 32 bytes) is written, read back.
  * Android: the stock misc (ios-port-research/device/misc/misc-stock-android.img) through Download Mode.
  */
+#if !Y2S_G985F       /* (the SM-G985F build has no code that writes misc at all) */
 static void
 misc_keep_recovery(void)
 {
@@ -5433,13 +5542,18 @@ misc_keep_recovery(void)
 	(void)bio->read_blocks(bio, bio->media->media_id, 0, bs, blk);
 	print("misc: boot-recovery %s\n", memcmp(blk, cmd, sizeof(cmd)) == 0 ? "written and read back" : "written, but reads back otherwise");
 }
+#endif
 static void
 y2s_menu_loop(void)
 {
 	const char *banner = "";
 	int wait = 3, first = 1;
 
+#if !Y2S_G985F
 	misc_keep_recovery();
+#else
+	/* the SM-G985F boots iOS from boot, not recovery: misc stays the dual boot's (y2s-boot clears it) */
+#endif
 
 	for (;;) {
 		int choice;

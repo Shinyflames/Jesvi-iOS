@@ -16,6 +16,8 @@ cc -std=c99 -Wall -Wextra -Werror tools/release/tests/data_volume_test.c -o "$te
 "$test_dir/data-volume"
 cc -std=c11 -Wall -Wextra -Werror -iquote xnu/files/bsd/sys tools/tests/gpu_policy.c -o "$test_dir/gpu-policy"
 "$test_dir/gpu-policy"
+cc -std=c99 -Wall -Wextra -Werror tools/tests/y2s_bounds_test.c -o "$test_dir/y2s-bounds"
+"$test_dir/y2s-bounds"
 for file in build.sh ci/*.sh x1slte.sh userland/build.sh userland/build-gpu-y2s.sh xnu-deps/setup.sh; do
     bash -n "$file"
 done
