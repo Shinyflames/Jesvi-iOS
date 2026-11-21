@@ -1,0 +1,10 @@
+# Commands run by the launchd job com.redwood.demo (see com.redwood.demo.plist).
+# y2s (S20+) test 13: Apple's own log of the microSD's way into Files and of Wi-Fi's auto-join, on the console
+# (oslogq: the live system log, only these processes), while the phone is unlocked and left alone.
+/redwood/bin/hello_dyn started by launchd
+/redwood/bin/oslogq 240 userfsd UVFSService userfs_helper livefileproviderd userfs_provider fileproviderd wifid weatherd locationd Weather WeatherWidget &
+/redwood/bin/rwtouch wait 32 swipe 0.5 0.985 0.5 0.3 250
+/redwood/bin/rwtouch wait 120
+/redwood/bin/rwsys kern.redwood.sdcard
+/bin/ls -la /private/var/mobile/Library/LiveFiles
+/bin/ps -A

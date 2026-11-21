@@ -1,0 +1,25 @@
+# Commands run by the launchd job com.redwood.demo (see com.redwood.demo.plist).
+# y2s (S20+) test 12: the microSD card's reads while userfsd/LiveFiles try it. kern.redwood.sdcard_reads/_errors count
+# the driver's transfers, _dbg and _last_int say the last one (RINTSTS: DCRC, DRTO, SBE, EBE...).
+/redwood/bin/hello_dyn started by launchd
+/redwood/bin/rwtouch wait 32 swipe 0.5 0.985 0.5 0.3 250
+/redwood/bin/hello_dyn y2ssd: at the start
+/redwood/bin/rwsys kern.redwood.sdcard
+/redwood/bin/rwsys kern.redwood.sdcard_reads
+/redwood/bin/rwsys kern.redwood.sdcard_errors
+/redwood/bin/rwsys kern.redwood.sdcard_dbg
+/redwood/bin/rwsys kern.redwood.sdcard_last_int
+/redwood/bin/rwtouch wait 90
+/redwood/bin/hello_dyn y2ssd: after 90 s
+/redwood/bin/rwsys kern.redwood.sdcard_reads
+/redwood/bin/rwsys kern.redwood.sdcard_errors
+/redwood/bin/rwsys kern.redwood.sdcard_dbg
+/redwood/bin/rwsys kern.redwood.sdcard_last_int
+/bin/ls -la /private/var/mobile/Library/LiveFiles /private/var/mobile/Library/LiveFiles/com.apple.filesystems.userfsd
+/redwood/bin/rwtouch wait 90
+/redwood/bin/hello_dyn y2ssd: after 180 s
+/redwood/bin/rwsys kern.redwood.sdcard_reads
+/redwood/bin/rwsys kern.redwood.sdcard_errors
+/redwood/bin/rwsys kern.redwood.sdcard_dbg
+/redwood/bin/rwsys kern.redwood.sdcard_last_int
+/bin/ps -A

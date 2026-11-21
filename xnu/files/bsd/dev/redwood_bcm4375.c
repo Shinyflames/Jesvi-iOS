@@ -1004,6 +1004,17 @@ bss_fill(struct redwood_sta_bss *b, const uint8_t *bi, uint32_t avail)
 	b->ssid_length = bi[18] > 32 ? 32 : bi[18];
 	memcpy(b->ssid, bi + 19, b->ssid_length);
 	b->rssi = (int16_t)le16(bi + 78);
+	/*
+	 * The noise floor of the scan result (brcmf_bss_info_le.phy_noise, an s8 right after the RSSI). Without it every
+	 * scanned network reached Apple80211 with noise 0 and SNR 0, and wifid's Unified Auto-Join refused even a -50 dBm
+	 * known network as "Below minimum RSSI threshold" (y2s test 14): joining by hand worked, auto-join never did.
+	 * A firmware that leaves it 0 gets a typical -95 dBm floor.
+	 */
+	{
+		int8_t phy_noise = (int8_t)bi[80];
+
+		b->noise = phy_noise < 0 && phy_noise > -128 && phy_noise < b->rssi ? phy_noise : -95;
+	}
 	b->frequency = chan_mhz(bi[88] != 0 ? bi[88] : (uint8_t)(le16(bi + 72) & 0xff), le16(bi + 72));
 	ie_offset = le16(bi + 116);
 	ie_length = le32(bi + 120);
