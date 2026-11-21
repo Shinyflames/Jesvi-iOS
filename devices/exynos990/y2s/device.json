@@ -1,15 +1,26 @@
 {
   "schema": 1,
   "id": "y2s",
-  "name": "Galaxy S20+ (Exynos)",
+  "name": "Galaxy S20+ LTE (Exynos)",
   "platform": "exynos990",
   "status": "unmaintained",
   "maintainers": [],
   "models": [],
   "recovery_products": [],
   "bootloaders": [],
+  "identity_note": "Measured SM-G985F / G985FXXSNHYB1 is in target.conf and the evidence doc. Lists stay empty until a y2s installer exists, so no installer can match this phone (tools/release/tests: test_roadmap_targets_are_not_marked_supported).",
   "installer_validated": false,
-  "partitions": {},
-  "layout": {},
-  "evidence": null
+  "partitions": {
+    "boot": 61865984,
+    "recovery": 69009408,
+    "super": 9437184000,
+    "darwin": 34359738368
+  },
+  "layout": {
+    "darwin_first_lba": 15433216,
+    "darwin_blocks": 8388608,
+    "darwin_unique_guid": "6E1A3C5B-2F44-4B8E-9D27-53D2A0F1C934",
+    "darwin_data_first_block": 2042368
+  },
+  "evidence": "docs/devices/y2s/board-facts.md"
 }

@@ -1732,11 +1732,17 @@ ufs_survey(void)
  * and a write is refused before that block. The identity is the whole of darwin-write.py's: the
  * same partition, named the same, of the same size, in the same place, on logical unit 0.
  */
+/*
+ * y2s SM-G985F (2026-11-21, measured): darwin is GPT entry 34, 32 GiB, LBA 15433216..23821823 of
+ * unit 0, between y2s-root (Linux) and userdata (Android). Unique GUID 6E1A3C5B-2F44-4B8E-9D27-
+ * 53D2A0F1C934, set when the partition was made (S20plusLinux ios/tools/mkgpt-darwin.py).
+ * HakiOS's earlier S20+ (SM-G986B) had 25374720..30617594, unique FD6854AD-...: not this phone.
+ */
 #define BLOCK_WRITE_FIRST  2042368ULL                  /* darwin's blocks of 4096: past both cryptexes */
-#define BLOCK_DARWIN_FIRST 25374720ULL                 /* its first and last LBA of unit 0, as the GPT has them */
-#define BLOCK_DARWIN_LAST  30617594ULL
+#define BLOCK_DARWIN_FIRST 15433216ULL                 /* its first and last LBA of unit 0, as the GPT has them */
+#define BLOCK_DARWIN_LAST  23821823ULL
 #define BLOCK_DARWIN_TYPE  { 0x7c3457ef, 0x0000, 0x11aa, { 0xaa, 0x11, 0x00, 0x30, 0x65, 0x43, 0xec, 0xac } }
-#define BLOCK_DARWIN_UNIQ  { 0xfd6854ad, 0x24aa, 0x4fc3, { 0x94, 0xfe, 0x29, 0x01, 0x16, 0x85, 0x8d, 0x68 } }
+#define BLOCK_DARWIN_UNIQ  { 0x6e1a3c5b, 0x2f44, 0x4b8e, { 0x9d, 0x27, 0x53, 0xd2, 0xa0, 0xf1, 0xc9, 0x34 } }
 
 /*
  * The partitions first, then the logical units they are on (BLOCK_PART_UNIT, named unit0, unit1,

@@ -75,14 +75,27 @@ extern void FlushPoC_DcacheRegion(vm_offset_t va, size_t length);   /* osfmk/arm
 #define BLOCK_OP_WRITE     1u
 
 /*
- * Where a write may go, and nowhere else: darwin, the port's own 20 GiB at the end of logical
- * unit 0, and in it only past what the build puts there from the computer -- the iOS volume
- * (blocks 0..1374207) and the two cryptexes behind it (..2042367). The loader keeps the same
- * bounds and the GUIDs of the partition besides (xnuloader/loader.c, BLOCK_WRITE_FIRST).
+ * Where a write may go, and nowhere else: darwin, the port's own partition on logical unit 0
+ * (GPT entry 34), and in it only past what the build puts there from the computer -- the iOS
+ * volume (blocks 0..1374207) and the two cryptexes behind it (..2042367). The loader keeps the
+ * same bounds and the GUIDs of the partition besides (xnuloader/loader.c, BLOCK_WRITE_FIRST).
+ *
+ * y2s SM-G985F (2026-11-21, measured on the phone): darwin is 32 GiB carved from the end of the
+ * Linux root, LBA 15433216..23821823, between y2s-root (sda32) and Android's userdata (sda33).
+ * (HakiOS's earlier S20+, an SM-G986B, had it at 25374720, 5242875 blocks: not this phone.)
  */
 #define UFS_WRITE_FIRST    2042368ULL                  /* darwin's blocks of 4096 */
-#define UFS_DARWIN_FIRST   25374720ULL                 /* its first LBA on the unit, as the GPT has it */
-#define UFS_DARWIN_BLOCKS  5242875ULL
+#define UFS_DARWIN_FIRST   15433216ULL                 /* its first LBA on the unit, as the GPT has it */
+#define UFS_DARWIN_BLOCKS  8388608ULL                  /* 32 GiB */
+
+/*
+ * y2s SM-G985F: iOS's data volume (HFS+ on /private/var) is the rest of darwin, from UFS_WRITE_FIRST
+ * to its end (6346240 blocks, 24.2 GiB), through this kernel's own driver only. Android's userdata and
+ * the Linux root are never written: the UFS_Y2S_DATA_* path below refuses on this phone by geometry
+ * (its LBA 2850304 is y2s-root's start here, not userdata's).
+ */
+#define UFS_DARWIN_DATA_FIRST  UFS_WRITE_FIRST
+#define UFS_DARWIN_DATA_BLOCKS (UFS_DARWIN_BLOCKS - UFS_WRITE_FIRST)
 
 /*
  * The S20+ (PLANS/09-standalone.md, P6): userdata -- Android's data partition, given up for it -- is
@@ -2279,8 +2292,45 @@ redwood_ufs_init(void)
 	 * The S20+ with ufs_write=1: the data volume's store in userdata (UFS_Y2S_*), through this
 	 * kernel's own driver only, and only if userdata is where and what it was on this phone.
 	 */
+	/*
+	 * y2s SM-G985F with ufs_write=1 ufs_darwin_data=1: the data volume is the rest of darwin
+	 * (UFS_DARWIN_DATA_*), through this kernel's own driver only, and only if darwin is on LUN 0
+	 * exactly where and what it is on this phone. If this takes the write window, userdata is
+	 * never looked at for writes.
+	 */
 	check = 0;
-	if (ufs_native_only && PE_parse_boot_argn("ufs_write", &check, sizeof(check)) && check == 1) {
+	if (ufs_native_only && PE_parse_boot_argn("ufs_write", &check, sizeof(check)) && check == 1 &&
+	    PE_parse_boot_argn("ufs_darwin_data", &check, sizeof(check)) && check == 1) {
+		uint32_t d = ufs_entry("darwin");
+		const char *why = NULL;
+
+		if (d == BLOCK_MAX_PARTS) {
+			why = "there is no darwin";
+		} else if (!ufs_native_on || ufs_lun[d] != 0) {
+			why = "it is not read by this kernel's own driver, on LUN 0";
+		} else if (ufs_page->part[d].flags & BLOCK_PART_UNIT) {
+			why = "it is a whole logical unit, not the partition";
+		} else if (ufs_page->part[d].start_lba != UFS_DARWIN_FIRST || ufs_page->part[d].blocks != UFS_DARWIN_BLOCKS ||
+		    ufs_page->part[d].block_size != 4096) {
+			why = "it is not where, or the size, it is on the SM-G985F";
+		} else if (!ufshc_set_write_window(0, UFS_DARWIN_FIRST + UFS_DARWIN_DATA_FIRST, UFS_DARWIN_DATA_BLOCKS)) {
+			why = "the driver took no window";
+		}
+		if (why != NULL) {
+			ufs_log("ufs: nothing takes writes: darwin data: %s\n", why);
+		} else {
+			ufs_write_part = (int)d;
+			ufs_write_first = UFS_DARWIN_DATA_FIRST;
+			ufs_write_end = UFS_DARWIN_BLOCKS;
+			ufs_var_publish(UFS_DARWIN_DATA_FIRST, UFS_DARWIN_DATA_BLOCKS);
+			ufs_log("ufs: darwin takes writes only in blocks %llu..%llu (%llu MB, iOS's data volume); "
+			    "everything else of the storage is read only\n", UFS_DARWIN_DATA_FIRST, UFS_DARWIN_BLOCKS,
+			    (UFS_DARWIN_DATA_BLOCKS * 4096) >> 20);
+		}
+	}
+
+	check = 0;
+	if (ufs_native_only && ufs_write_part < 0 && PE_parse_boot_argn("ufs_write", &check, sizeof(check)) && check == 1) {
 		uint32_t i = ufs_entry("userdata");
 		const char *why = NULL;
 
@@ -2356,7 +2406,11 @@ redwood_ufs_init(void)
 			}
 		}
 		/* with ufs_win (IOS_DATA_GB in release.conf) the rest of userdata is not iOS's: leave it out of the capacity */
-		if (ufs_write_part >= 0 && ufs_write_end - ufs_write_first < UFS_Y2S_DATA_BLOCKS) {
+		if (ufs_write_part >= 0 && strcmp((const char *)ufs_page->part[ufs_write_part].name, "darwin") == 0 &&
+		    ufs_write_first == UFS_DARWIN_DATA_FIRST) {
+			/* y2s SM-G985F: iOS has darwin only (system + data); the rest is Android's and Linux's */
+			total = UFS_DARWIN_BLOCKS * 4096ULL;
+		} else if (ufs_write_part >= 0 && ufs_write_end - ufs_write_first < UFS_Y2S_DATA_BLOCKS) {
 			total -= (UFS_Y2S_DATA_BLOCKS - (ufs_write_end - ufs_write_first)) * 4096ULL;
 		}
 		ufs_log("ufs: the storage: %llu MB in all, given to iOS as disk0\n", total >> 20);

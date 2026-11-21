@@ -13,11 +13,11 @@ Blocks are darwin's own, 4096 bytes, counted from the partition's start. What it
 
   - darwin is what it was when the port was set up, read at the time of the write and compared with the
     constants below, all of them: the GPT of logical unit 0 (header and table CRCs right; entry 34 named
-    darwin, its type and unique GUIDs, LBA 25374720..30617594; no other entry over any of it), sda being
+    darwin, its type and unique GUIDs, LBA 15433216..23821823 on the y2s SM-G985F; no other entry over any of it), sda being
     logical unit 0 of the UFS controller, /dev/block/by-name/darwin being /dev/block/sda34, whose number,
     name, start and size in sysfs and whose size by blockdev say the same. Anything else: no write.
   - the blocks lie inside darwin and after the iOS volume at its start (rootfs.apfs, blocks 0..1374207,
-    which is never written): BLOCK >= 1374208 and BLOCK + COUNT <= 5242875. Anything else: no write.
+    which is never written): BLOCK >= 1374208 and BLOCK + COUNT <= 8388608. Anything else: no write.
   - the write goes to /dev/block/by-name/darwin only, by dd with seek and count in blocks of 4096, from a
     copy of the image on the phone whose sha256 has been checked; in the same shell, right before dd,
     the name is checked again to be sda34 of darwin's size. Never /dev/block/sda or anything else.
@@ -36,13 +36,13 @@ import uuid
 
 NAME = 'darwin'
 TYPE = '7C3457EF-0000-11AA-AA11-00306543ECAC'          # Apple APFS
-UNIQUE = 'FD6854AD-24AA-4FC3-94FE-290116858D68'
+UNIQUE = '6E1A3C5B-2F44-4B8E-9D27-53D2A0F1C934'   # y2s SM-G985F, 2026-11-21
 LUN = 0
 PARTN = 34
-FIRST = 25374720
-LAST = 30617594
+FIRST = 15433216
+LAST = 23821823
 BS = 4096
-BLOCKS = LAST - FIRST + 1                               # 5242875
+BLOCKS = LAST - FIRST + 1                               # 8388608 (32 GiB)
 PROTECTED = 1374208                                     # rootfs.apfs: 5628755968 bytes, never written
 DEV = '/dev/block/by-name/darwin'
 NODE = '/dev/block/sda34'
@@ -133,10 +133,12 @@ echo "size=$(cat /sys/class/block/sda%(n)d/size)"
 echo "name=$(grep ^PARTNAME= /sys/class/block/sda%(n)d/uevent | cut -d= -f2)"
 echo "bytes=$(blockdev --getsize64 %(dev)s)"
 echo "ss=$(blockdev --getss /dev/block/sda)"
+echo "model=$(getprop ro.boot.em.model)"
 ''' % {'dev': DEV, 'n': PARTN})
     facts = dict(line.split('=', 1) for line in out.split('\n') if '=' in line)
     bad = []
-    want = {'node': NODE, 'partition': str(PARTN), 'start': str(FIRST * BS // 512), 'size': str(BLOCKS * BS // 512),
+    # y2s: the ROM spoofs ro.product.model; ro.boot.em.model is the bootloader's own
+    want = {'model': 'SM-G985F', 'node': NODE, 'partition': str(PARTN), 'start': str(FIRST * BS // 512), 'size': str(BLOCKS * BS // 512),
             'name': NAME, 'bytes': str(BLOCKS * BS), 'ss': str(BS)}
     for k, v in want.items():
         if facts.get(k) != v:
@@ -144,10 +146,10 @@ echo "ss=$(blockdev --getss /dev/block/sda)"
     lun = facts.get('lun', '')
     if 'ufshc' not in lun or not lun.endswith(':%d' % LUN):
         bad.append('sda is %r, not logical unit %d of the UFS controller' % (lun, LUN))
-    # the GPT: LBA 1 (header) and the table after it (64 entries of 128 bytes: LBA 2..3)
-    raw = phone_bytes('dd if=/dev/block/sda bs=%d skip=1 count=3 2>/dev/null' % BS)
-    if len(raw) != 3 * BS:
-        bad.append('read %d bytes of the GPT, not %d' % (len(raw), 3 * BS))
+    # the GPT: LBA 1 (header) and the table after it (y2s SM-G985F: 128 entries of 128 bytes, LBA 2..5)
+    raw = phone_bytes('dd if=/dev/block/sda bs=%d skip=1 count=5 2>/dev/null' % BS)
+    if len(raw) != 5 * BS:
+        bad.append('read %d bytes of the GPT, not %d' % (len(raw), 5 * BS))
     else:
         bad += check_gpt(raw)
     if bad:
